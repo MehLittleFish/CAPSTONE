@@ -1,3 +1,6 @@
+PIL
+matplotlib
+utils
 absl-py==0.8.1
 aocr==0.7.5
 astor==0.8.0

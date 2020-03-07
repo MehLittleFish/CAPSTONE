@@ -25,7 +25,9 @@ import six
 from six.moves import range
 from six.moves import zip
 import tensorflow as tf
-
+import sys
+sys.path.append("C:\\Users\\Abe\\Documents\\GitHub\\CAPSTONE\\Tensorflow\\models\\research")
+print(sys.path)
 from object_detection.core import standard_fields as fields
 from object_detection.utils import shape_utils
 from object_detection.utils import spatial_transform_ops as spatial_ops
