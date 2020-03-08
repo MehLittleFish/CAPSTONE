@@ -1,0 +1,170 @@
+import numpy as np
+import sys, os
+import tensorflow as tf
+from matplotlib import pyplot as plt
+from PIL import Image
+
+from Tensorflow.object_detection.utils import ops as utils_ops
+from Tensorflow.object_detection.utils import label_map_util
+from Tensorflow.object_detection.utils import visualization_utils as vis_util
+
+ABS_DIR = os.path.dirname(os.path.realpath(__file__))
+CROP_DIR = os.path.join(ABS_DIR, "../../images/temporary/cropped")
+SAVE_DIR = os.path.join(ABS_DIR, "../../images/temporary/words")
+
+class TextDetection:
+    path = os.path.dirname(os.path.realpath(__file__))  # Relative directory path
+    MODEL_NAME = '/text_graph'  # What model to download.
+    PATH_TO_TEST_IMAGES_DIR = os.path.join(path, "../../images/test")  # Relative path to test images
+
+    # Path to frozen detection graph. This is the actual model that is used for the object detection.
+    PATH_TO_FROZEN_GRAPH = path + MODEL_NAME + '/frozen_inference_graph.pb'
+
+    # List of the strings that is used to add correct label for each box.
+    PATH_TO_LABELS = os.path.join(path, os.path.join('data', 'text_label_map.pbtxt'))
+
+    NUM_CLASSES = 1
+
+    counter = 0
+
+    detection_graph = tf.Graph()
+    with detection_graph.as_default():
+        od_graph_def = tf.compat.v1.GraphDef()
+        with tf.compat.v1.gfile.GFile(PATH_TO_FROZEN_GRAPH, 'rb') as fid:
+            serialized_graph = fid.read()
+            od_graph_def.ParseFromString(serialized_graph)
+            tf.import_graph_def(od_graph_def, name='')
+
+    label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
+    categories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes=NUM_CLASSES,
+                                                                use_display_name=False)
+    category_index = label_map_util.create_category_index(categories)
+
+    TEST_IMAGE_PATHS = os.path.join(PATH_TO_TEST_IMAGES_DIR, 'image6.jpg')
+    print(TEST_IMAGE_PATHS)
+
+    # Size, in inches, of the output images.
+    IMAGE_SIZE = (24, 16)
+
+    @staticmethod
+    def load_image_into_numpy_array(image):
+        (im_width, im_height) = image.size
+        return np.array(image.getdata()).reshape(
+            (im_height, im_width, 3)).astype(np.uint8)
+
+    @staticmethod
+    def run_inference_for_single_image(image, graph):
+        with graph.as_default():
+            with tf.compat.v1.Session() as sess:
+                # Get handles to input and output tensors
+                ops = tf.compat.v1.get_default_graph().get_operations()
+                all_tensor_names = {output.name for op in ops for output in op.outputs}
+                tensor_dict = {}
+                for key in [
+                    'num_detections', 'detection_boxes', 'detection_scores',
+                    'detection_classes', 'detection_masks'
+                ]:
+                    tensor_name = key + ':0'
+                    if tensor_name in all_tensor_names:
+                        tensor_dict[key] = tf.compat.v1.get_default_graph().get_tensor_by_name(
+                            tensor_name)
+                if 'detection_masks' in tensor_dict:
+                    # The following processing is only for single image
+                    detection_boxes = tf.squeeze(tensor_dict['detection_boxes'], [0])
+                    detection_masks = tf.squeeze(tensor_dict['detection_masks'], [0])
+                    # Reframe is required to translate mask from box coordinates to
+                    # image coordinates and fit the image size.
+                    real_num_detection = tf.cast(tensor_dict['num_detections'][0], tf.int32)
+                    detection_boxes = tf.slice(detection_boxes, [0, 0], [real_num_detection, -1])
+                    detection_masks = tf.slice(detection_masks, [0, 0, 0], [real_num_detection, -1, -1])
+                    detection_masks_reframed = utils_ops.reframe_box_masks_to_image_masks(
+                        detection_masks, detection_boxes, image.shape[0], image.shape[1])
+                    detection_masks_reframed = tf.cast(
+                        tf.greater(detection_masks_reframed, 0.5), tf.uint8)
+                    # Follow the convention by adding back the batch dimension
+                    tensor_dict['detection_masks'] = tf.expand_dims(
+                        detection_masks_reframed, 0)
+                image_tensor = tf.compat.v1.get_default_graph().get_tensor_by_name('image_tensor:0')
+
+                # Run inference
+                output_dict = sess.run(tensor_dict,
+                                       feed_dict={image_tensor: np.expand_dims(image, 0)})
+
+                # all outputs are float32 numpy arrays, so convert types as appropriate
+                output_dict['num_detections'] = int(output_dict['num_detections'][0])
+                output_dict['detection_classes'] = output_dict[
+                    'detection_classes'][0].astype(np.uint8)
+                output_dict['detection_boxes'] = output_dict['detection_boxes'][0]
+                output_dict['detection_scores'] = output_dict['detection_scores'][0]
+                if 'detection_masks' in output_dict:
+                    output_dict['detection_masks'] = output_dict['detection_masks'][0]
+        return output_dict
+
+    def split_image(self):
+        img = Image.open(self.TEST_IMAGE_PATHS)
+        width, height = img.size
+        half = width / 2
+        thirds = height / 3
+        cropped = []
+        cropped.append(img.crop((0, 0, half, thirds)))
+        cropped.append(img.crop((half, 0, width, thirds)))
+        cropped.append(img.crop((0, thirds, half, 2 * thirds)))
+        cropped.append(img.crop((half, thirds, width, 2 * thirds)))
+        cropped.append(img.crop((0, 2 * thirds, half, height)))
+        cropped.append(img.crop((half, 2 * thirds, width, height)))
+        for x in range(6):
+            cropped[x].save(
+                CROP_DIR + "/crop" + str(
+                    x + 1) + ".jpg")
+            self.run_detection(cropped[x])
+
+    def run_detection(self, cropped):
+        image = cropped
+        im_width, im_height = image.size
+        coor = []
+        c1 = 0
+        c2 = 0
+        # the array based representation of the image will be used later in order to prepare the
+        # result image with boxes and labels on it.
+        image_np = self.load_image_into_numpy_array(image)
+        # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
+        image_np_expanded = np.expand_dims(image_np, axis=0)
+        # Actual detection.
+        output_dict = self.run_inference_for_single_image(image_np, self.detection_graph)
+        # Visualization of the results of a detection
+        vis_util.visualize_boxes_and_labels_on_image_array(
+            image_np,
+            output_dict['detection_boxes'],
+            output_dict['detection_classes'],
+            output_dict['detection_scores'],
+            self.category_index,
+            instance_masks=output_dict.get('detection_masks'),
+            use_normalized_coordinates=True,
+            line_thickness=3)
+        for i in range(0, output_dict['num_detections']):
+            coor.append(
+                (output_dict['detection_boxes'][i][1] * im_width, output_dict['detection_boxes'][i][0] * im_height,
+                 output_dict['detection_boxes'][i][3] * im_width, output_dict['detection_boxes'][i][2] * im_height))
+        coor = sorted(coor, key=lambda k: [k[0], k[1]])
+        coor = sorted(coor, key=lambda k: [k[1], k[0]])
+        while True:
+            for i in range(0, len(coor) - 1):
+                if coor[i][0] > coor[i + 1][0]:
+                    if 20 > coor[i + 1][1] - coor[i][1] > -20:
+                        coor[i], coor[i + 1] = coor[i + 1], coor[i]
+                        c1 += 1
+            if c1 == c2:
+                break
+            c2 = c1
+        for i in range(0, output_dict['num_detections']):
+            img2 = image.crop(coor[i])
+            img2.save(
+                SAVE_DIR + "/image" + str(
+                    self.counter + 1) + ".jpg")
+            self.counter += 1
+            print(self.counter)
+        #plt.figure(figsize=self.IMAGE_SIZE)
+        #plt.imshow(image_np)
+        #plt.show()
+
+    #TODO Add a function that checks coordinates, should reorganize the sentences so they actually make sense
