@@ -1,7 +1,8 @@
 import numpy as np
 import sys, os
 import tensorflow as tf
-from source.capstone import TARGET_DIR, CROP_DIR, WORD_DIR, DETECTION_MODEL_PATH, DETECTION_LABEL_PATH
+
+from source.capstone import TARGET_FILE_NAME, TARGET_DIR, CROP_DIR, WORD_DIR, DETECTION_MODEL_PATH, DETECTION_LABEL_PATH
 from matplotlib import pyplot as plt
 from PIL import Image
 
@@ -11,12 +12,13 @@ from Tensorflow.object_detection.utils import visualization_utils as vis_util
 
 class TextDetection:
     NUM_CLASSES = 1
-
     counter = 0
 
     detection_graph = tf.Graph()
+
     with detection_graph.as_default():
         od_graph_def = tf.compat.v1.GraphDef()
+        
         with tf.compat.v1.gfile.GFile(DETECTION_MODEL_PATH, 'rb') as fid:
             serialized_graph = fid.read()
             od_graph_def.ParseFromString(serialized_graph)
@@ -27,7 +29,7 @@ class TextDetection:
                                                                 use_display_name=False)
     category_index = label_map_util.create_category_index(categories)
 
-    TEST_IMAGE_PATHS = os.path.join(TARGET_DIR, 'image6.jpg')
+    TARGET_IMAGE_PATH = os.path.join(TARGET_DIR, TARGET_FILE_NAME)
 
     # Size, in inches, of the output images.
     IMAGE_SIZE = (24, 16)
@@ -46,14 +48,16 @@ class TextDetection:
                 ops = tf.compat.v1.get_default_graph().get_operations()
                 all_tensor_names = {output.name for op in ops for output in op.outputs}
                 tensor_dict = {}
+                
                 for key in [
                     'num_detections', 'detection_boxes', 'detection_scores',
-                    'detection_classes', 'detection_masks'
-                ]:
+                    'detection_classes', 'detection_masks']:
                     tensor_name = key + ':0'
+                    
                     if tensor_name in all_tensor_names:
                         tensor_dict[key] = tf.compat.v1.get_default_graph().get_tensor_by_name(
                             tensor_name)
+
                 if 'detection_masks' in tensor_dict:
                     # The following processing is only for single image
                     detection_boxes = tf.squeeze(tensor_dict['detection_boxes'], [0])
@@ -70,6 +74,7 @@ class TextDetection:
                     # Follow the convention by adding back the batch dimension
                     tensor_dict['detection_masks'] = tf.expand_dims(
                         detection_masks_reframed, 0)
+
                 image_tensor = tf.compat.v1.get_default_graph().get_tensor_by_name('image_tensor:0')
 
                 # Run inference
@@ -78,16 +83,19 @@ class TextDetection:
 
                 # all outputs are float32 numpy arrays, so convert types as appropriate
                 output_dict['num_detections'] = int(output_dict['num_detections'][0])
-                output_dict['detection_classes'] = output_dict[
-                    'detection_classes'][0].astype(np.uint8)
+                output_dict['detection_classes'] = output_dict['detection_classes'][0].astype(np.uint8)
                 output_dict['detection_boxes'] = output_dict['detection_boxes'][0]
                 output_dict['detection_scores'] = output_dict['detection_scores'][0]
+                
                 if 'detection_masks' in output_dict:
                     output_dict['detection_masks'] = output_dict['detection_masks'][0]
+
         return output_dict
 
+    # Section the target image into grids of 2X3
+    # Section grids will pass though the model
     def split_image(self):
-        img = Image.open(self.TEST_IMAGE_PATHS)
+        img = Image.open(self.TARGET_IMAGE_PATH)
         width, height = img.size
         half = width / 2
         thirds = height / 3
@@ -98,12 +106,14 @@ class TextDetection:
         cropped.append(img.crop((half, thirds, width, 2 * thirds)))
         cropped.append(img.crop((0, 2 * thirds, half, height)))
         cropped.append(img.crop((half, 2 * thirds, width, height)))
+        
+        # Save each section as a new image
         for x in range(6):
             cropped[x].save(
-                CROP_DIR + "/crop" + str(
-                    x + 1) + ".jpg")
+                CROP_DIR + "/crop" + str(x + 1) + ".jpg")
             self.run_detection(cropped[x])
 
+    # Main method for text detection
     def run_detection(self, cropped):
         image = cropped
         im_width, im_height = image.size
@@ -127,28 +137,38 @@ class TextDetection:
             instance_masks=output_dict.get('detection_masks'),
             use_normalized_coordinates=True,
             line_thickness=3)
+
         for i in range(0, output_dict['num_detections']):
             coor.append(
                 (output_dict['detection_boxes'][i][1] * im_width, output_dict['detection_boxes'][i][0] * im_height,
                  output_dict['detection_boxes'][i][3] * im_width, output_dict['detection_boxes'][i][2] * im_height))
+        
+        # Sort the cropped words into the order they would be read in
+        # NOTE This implementation doesn't work anymore with 'split_image' method
         coor = sorted(coor, key=lambda k: [k[0], k[1]])
         coor = sorted(coor, key=lambda k: [k[1], k[0]])
+        
         while True:
             for i in range(0, len(coor) - 1):
                 if coor[i][0] > coor[i + 1][0]:
                     if 20 > coor[i + 1][1] - coor[i][1] > -20:
                         coor[i], coor[i + 1] = coor[i + 1], coor[i]
                         c1 += 1
+            
             if c1 == c2:
                 break
+
             c2 = c1
+
+        # Save cropped words into images
         for i in range(0, output_dict['num_detections']):
             img2 = image.crop(coor[i])
             img2.save(
                 WORD_DIR + "/image" + str(
                     self.counter + 1) + ".jpg")
             self.counter += 1
-            print(self.counter)
+            #print(self.counter)
+
         #plt.figure(figsize=self.IMAGE_SIZE)
         #plt.imshow(image_np)
         #plt.show()
