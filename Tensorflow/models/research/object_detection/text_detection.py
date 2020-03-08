@@ -1,12 +1,16 @@
 import numpy as np
-import os
+import sys, os
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from PIL import Image
+
 from Tensorflow.models.research.object_detection.utils import ops as utils_ops
 from Tensorflow.models.research.object_detection.utils import label_map_util
 from Tensorflow.models.research.object_detection.utils import visualization_utils as vis_util
 
+ABS_DIR = os.path.dirname(os.path.realpath(__file__))
+CROP_DIR = os.path.join(ABS_DIR, "../../../../source/testing")
+SAVE_DIR = os.path.join(ABS_DIR, "test_images/Test_boi")
 
 class TextDetection:
     path = os.path.dirname(os.path.realpath(__file__))  # Relative directory path
@@ -25,8 +29,8 @@ class TextDetection:
 
     detection_graph = tf.Graph()
     with detection_graph.as_default():
-        od_graph_def = tf.GraphDef()
-        with tf.gfile.GFile(PATH_TO_FROZEN_GRAPH, 'rb') as fid:
+        od_graph_def = tf.compat.v1.GraphDef()
+        with tf.compat.v1.gfile.GFile(PATH_TO_FROZEN_GRAPH, 'rb') as fid:
             serialized_graph = fid.read()
             od_graph_def.ParseFromString(serialized_graph)
             tf.import_graph_def(od_graph_def, name='')
@@ -51,7 +55,7 @@ class TextDetection:
     @staticmethod
     def run_inference_for_single_image(image, graph):
         with graph.as_default():
-            with tf.Session() as sess:
+            with tf.compat.v1.Session() as sess:
                 # Get handles to input and output tensors
                 ops = tf.compat.v1.get_default_graph().get_operations()
                 all_tensor_names = {output.name for op in ops for output in op.outputs}
@@ -110,7 +114,7 @@ class TextDetection:
         cropped.append(img.crop((half, 2 * thirds, width, height)))
         for x in range(6):
             cropped[x].save(
-                "C:/Users/Abe/Documents/GitHub/CAPSTONE/source/testing/crop" + str(
+                CROP_DIR + "/crop" + str(
                     x + 1) + ".jpg")
             self.run_detection(cropped[x])
 
@@ -155,7 +159,7 @@ class TextDetection:
         for i in range(0, output_dict['num_detections']):
             img2 = image.crop(coor[i])
             img2.save(
-                "C:/Users/Abe/Documents/GitHub/CAPSTONE/Tensorflow/models/research/object_detection/test_images/Test_boi/image" + str(
+                SAVE_DIR + "/image" + str(
                     self.counter + 1) + ".jpg")
             self.counter += 1
             print(self.counter)

@@ -73,3 +73,4 @@ fabric.properties
 # Ignore venv
 venv/
 env/
+.vscode/settings.json
