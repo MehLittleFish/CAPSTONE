@@ -1,6 +1,7 @@
 import numpy as np
 import sys, os
 import tensorflow as tf
+from source.capstone import TARGET_DIR, CROP_DIR, WORD_DIR, DETECTION_MODEL_PATH, DETECTION_LABEL_PATH
 from matplotlib import pyplot as plt
 from PIL import Image
 
@@ -8,21 +9,7 @@ from Tensorflow.object_detection.utils import ops as utils_ops
 from Tensorflow.object_detection.utils import label_map_util
 from Tensorflow.object_detection.utils import visualization_utils as vis_util
 
-ABS_DIR = os.path.dirname(os.path.realpath(__file__))
-CROP_DIR = os.path.join(ABS_DIR, "../../images/temporary/cropped")
-SAVE_DIR = os.path.join(ABS_DIR, "../../images/temporary/words")
-
 class TextDetection:
-    path = os.path.dirname(os.path.realpath(__file__))  # Relative directory path
-    MODEL_NAME = '/text_graph'  # What model to download.
-    PATH_TO_TEST_IMAGES_DIR = os.path.join(path, "../../images/test")  # Relative path to test images
-
-    # Path to frozen detection graph. This is the actual model that is used for the object detection.
-    PATH_TO_FROZEN_GRAPH = path + MODEL_NAME + '/frozen_inference_graph.pb'
-
-    # List of the strings that is used to add correct label for each box.
-    PATH_TO_LABELS = os.path.join(path, os.path.join('data', 'text_label_map.pbtxt'))
-
     NUM_CLASSES = 1
 
     counter = 0
@@ -30,18 +17,17 @@ class TextDetection:
     detection_graph = tf.Graph()
     with detection_graph.as_default():
         od_graph_def = tf.compat.v1.GraphDef()
-        with tf.compat.v1.gfile.GFile(PATH_TO_FROZEN_GRAPH, 'rb') as fid:
+        with tf.compat.v1.gfile.GFile(DETECTION_MODEL_PATH, 'rb') as fid:
             serialized_graph = fid.read()
             od_graph_def.ParseFromString(serialized_graph)
             tf.import_graph_def(od_graph_def, name='')
 
-    label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
+    label_map = label_map_util.load_labelmap(DETECTION_LABEL_PATH)
     categories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes=NUM_CLASSES,
                                                                 use_display_name=False)
     category_index = label_map_util.create_category_index(categories)
 
-    TEST_IMAGE_PATHS = os.path.join(PATH_TO_TEST_IMAGES_DIR, 'image6.jpg')
-    print(TEST_IMAGE_PATHS)
+    TEST_IMAGE_PATHS = os.path.join(TARGET_DIR, 'image6.jpg')
 
     # Size, in inches, of the output images.
     IMAGE_SIZE = (24, 16)
@@ -159,7 +145,7 @@ class TextDetection:
         for i in range(0, output_dict['num_detections']):
             img2 = image.crop(coor[i])
             img2.save(
-                SAVE_DIR + "/image" + str(
+                WORD_DIR + "/image" + str(
                     self.counter + 1) + ".jpg")
             self.counter += 1
             print(self.counter)
