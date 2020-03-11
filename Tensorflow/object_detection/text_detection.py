@@ -13,7 +13,8 @@ from Tensorflow.object_detection.utils import visualization_utils as vis_util
 class TextDetection:
     NUM_CLASSES = 1
     counter = 0
-
+    words = []
+    temp_words = []
     detection_graph = tf.Graph()
 
     with detection_graph.as_default():
@@ -97,24 +98,30 @@ class TextDetection:
     def split_image(self):
         img = Image.open(self.TARGET_IMAGE_PATH)
         width, height = img.size
-        half = width / 2
-        thirds = height / 3
         cropped = []
-        cropped.append(img.crop((0, 0, half, thirds)))
-        cropped.append(img.crop((half, 0, width, thirds)))
-        cropped.append(img.crop((0, thirds, half, 2 * thirds)))
-        cropped.append(img.crop((half, thirds, width, 2 * thirds)))
-        cropped.append(img.crop((0, 2 * thirds, half, height)))
-        cropped.append(img.crop((half, 2 * thirds, width, height)))
+        sixth = height/6
+        twelve = height / 12
+        cropped.append(img.crop((0, 0, width, sixth)))
+        cropped.append(img.crop((0, twelve, width, 1.5*sixth)))
+        cropped.append(img.crop((0, sixth, width, 2*sixth)))
+        cropped.append(img.crop((0, (3 * (height / 12)), width, 2.5*sixth)))
+        cropped.append(img.crop((0, (4 * (height / 12)), width, 3*sixth)))
+        cropped.append(img.crop((0, (5 * (height / 12)), width, 3.5*sixth)))
+        cropped.append(img.crop((0, (6 * (height / 12)), width, 4*sixth)))
+        cropped.append(img.crop((0, (7 * (height / 12)), width, 4.5*sixth)))
+        cropped.append(img.crop((0, (8 * (height / 12)), width, 5*sixth)))
+        cropped.append(img.crop((0, (9 * (height / 12)), width, 5.5*sixth)))
+        cropped.append(img.crop((0, (10 * (height / 12)), width, height)))
         
         # Save each section as a new image
-        for x in range(6):
-            cropped[x].save(
-                CROP_DIR + "/crop" + str(x + 1) + ".jpg")
-            self.run_detection(cropped[x])
+        for x in range(0, len(cropped)):
+            #cropped[x].save(
+                #CROP_DIR + "/crop" + str(x + 1) + ".jpg")
+            self.run_detection(cropped[x], x)
+        self.save_the_things(img)
 
     # Main method for text detection
-    def run_detection(self, cropped):
+    def run_detection(self, cropped, iteration):
         image = cropped
         im_width, im_height = image.size
         coor = []
@@ -140,13 +147,14 @@ class TextDetection:
 
         for i in range(0, output_dict['num_detections']):
             coor.append(
-                (output_dict['detection_boxes'][i][1] * im_width, output_dict['detection_boxes'][i][0] * im_height,
-                 output_dict['detection_boxes'][i][3] * im_width, output_dict['detection_boxes'][i][2] * im_height))
+                (output_dict['detection_boxes'][i][1] * im_width, output_dict['detection_boxes'][i][0] * im_height + (iteration*im_height/2),
+                 output_dict['detection_boxes'][i][3] * im_width, output_dict['detection_boxes'][i][2] * im_height + (iteration*im_height/2)))
         
         # Sort the cropped words into the order they would be read in
         # NOTE This implementation doesn't work anymore with 'split_image' method
         coor = sorted(coor, key=lambda k: [k[0], k[1]])
         coor = sorted(coor, key=lambda k: [k[1], k[0]])
+        print (coor)
         
         while True:
             for i in range(0, len(coor) - 1):
@@ -159,8 +167,9 @@ class TextDetection:
                 break
 
             c2 = c1
-
+        self.merge_boxy_bois(iteration, im_height, coor)
         # Save cropped words into images
+        """
         for i in range(0, output_dict['num_detections']):
             img2 = image.crop(coor[i])
             img2.save(
@@ -172,5 +181,66 @@ class TextDetection:
         #plt.figure(figsize=self.IMAGE_SIZE)
         #plt.imshow(image_np)
         #plt.show()
-
+        """
     #TODO Add a function that checks coordinates, should reorganize the sentences so they actually make sense
+    def merge_boxy_bois(self, iteration, height, coor):
+        top = []
+        bottom = []
+        if iteration == 0:
+            for x1 in coor:
+                if x1[3] > height/2:
+                    print("2")
+                    self.temp_words.append(x1)
+                else:
+                    self.words.append(x1)
+        else:
+            for x1 in coor:
+                if x1[3] < (iteration - 1)*(height / 2)+height:
+                    top.append(x1)
+                else:
+                    bottom.append(x1)
+            found = False
+            for x1 in top:
+                for y in self.temp_words:
+                    if self.do_over_lap(x1, y):
+                        self.words.append(self.merge(x1, y))
+                        found = True
+                        break
+                if found == False:
+                    self.words.append(x1)
+                found = False
+            self.temp_words = bottom
+
+
+    @staticmethod
+    def do_over_lap(x2, y):
+
+        # If one rectangle is on left side of other
+        if x2[0] > y[2] or y[0] > x2[2]:
+            return False
+
+        # If one rectangle is above other
+        if x2[1] > y[3] or y[1] > x2[3]:
+            return False
+
+        return True
+
+    @staticmethod
+    def merge(x, y):
+        c = []
+        c.append(min(x[0], y[0]))
+        c.append(min(x[1], y[1]))
+        c.append(max(x[2], y[2]))
+        c.append(max(x[3], y[3]))
+        return c
+
+    def save_the_things(self, img):
+        for i in range(0, len(self.words)):
+            img2 = img.crop(self.words[i])
+            img2.save(
+                WORD_DIR + "/image" + str(
+                    self.counter + 1) + ".jpg")
+            self.counter += 1
+
+x = TextDetection()
+x.split_image()
