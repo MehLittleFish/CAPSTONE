@@ -162,34 +162,18 @@ class TextDetection:
                     if 20 > coor[i + 1][1] - coor[i][1] > -20:
                         coor[i], coor[i + 1] = coor[i + 1], coor[i]
                         c1 += 1
-            
             if c1 == c2:
                 break
 
             c2 = c1
         self.merge_boxy_bois(iteration, im_height, coor)
-        # Save cropped words into images
-        """
-        for i in range(0, output_dict['num_detections']):
-            img2 = image.crop(coor[i])
-            img2.save(
-                WORD_DIR + "/image" + str(
-                    self.counter + 1) + ".jpg")
-            self.counter += 1
-            #print(self.counter)
 
-        #plt.figure(figsize=self.IMAGE_SIZE)
-        #plt.imshow(image_np)
-        #plt.show()
-        """
-    #TODO Add a function that checks coordinates, should reorganize the sentences so they actually make sense
     def merge_boxy_bois(self, iteration, height, coor):
         top = []
         bottom = []
         if iteration == 0:
             for x1 in coor:
                 if x1[3] > height/2:
-                    print("2")
                     self.temp_words.append(x1)
                 else:
                     self.words.append(x1)
@@ -206,10 +190,13 @@ class TextDetection:
                         self.words.append(self.merge(x1, y))
                         found = True
                         break
-                if found == False:
+                if not found:
                     self.words.append(x1)
                 found = False
             self.temp_words = bottom
+            if iteration == 10:
+                for i in bottom:
+                    self.words.append(i)
 
 
     @staticmethod
@@ -238,9 +225,7 @@ class TextDetection:
         for i in range(0, len(self.words)):
             img2 = img.crop(self.words[i])
             img2.save(
-                WORD_DIR + "/image" + str(
-                    self.counter + 1) + ".jpg")
-            self.counter += 1
+                WORD_DIR + "/image" + str(i) + ".jpg")
 
 x = TextDetection()
 x.split_image()
