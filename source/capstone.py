@@ -7,7 +7,7 @@ ROOT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
 # -------Image Directories--------------
 TARGET_DIR = os.path.join(ROOT_DIR, "images/test") # Relative path to target images
-TARGET_FILE_NAME = "image6.jpg" # File name of the target image
+TARGET_FILE_NAME = "image2.jpg" # File name of the target image
 CROP_DIR = os.path.join(ROOT_DIR, "images/temporary/cropped") # Directory to cropped segments of the original target image
 WORD_DIR = os.path.join(ROOT_DIR, "images/temporary/words") # Directory of the images of the indivual words in the target image
 

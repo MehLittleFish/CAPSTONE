@@ -10,6 +10,7 @@ from Tensorflow.object_detection.utils import ops as utils_ops
 from Tensorflow.object_detection.utils import label_map_util
 from Tensorflow.object_detection.utils import visualization_utils as vis_util
 
+
 class TextDetection:
     NUM_CLASSES = 1
     counter = 0
@@ -19,7 +20,7 @@ class TextDetection:
 
     with detection_graph.as_default():
         od_graph_def = tf.compat.v1.GraphDef()
-        
+
         with tf.compat.v1.gfile.GFile(DETECTION_MODEL_PATH, 'rb') as fid:
             serialized_graph = fid.read()
             od_graph_def.ParseFromString(serialized_graph)
@@ -49,12 +50,12 @@ class TextDetection:
                 ops = tf.compat.v1.get_default_graph().get_operations()
                 all_tensor_names = {output.name for op in ops for output in op.outputs}
                 tensor_dict = {}
-                
+
                 for key in [
                     'num_detections', 'detection_boxes', 'detection_scores',
                     'detection_classes', 'detection_masks']:
                     tensor_name = key + ':0'
-                    
+
                     if tensor_name in all_tensor_names:
                         tensor_dict[key] = tf.compat.v1.get_default_graph().get_tensor_by_name(
                             tensor_name)
@@ -87,46 +88,49 @@ class TextDetection:
                 output_dict['detection_classes'] = output_dict['detection_classes'][0].astype(np.uint8)
                 output_dict['detection_boxes'] = output_dict['detection_boxes'][0]
                 output_dict['detection_scores'] = output_dict['detection_scores'][0]
-                
+
                 if 'detection_masks' in output_dict:
                     output_dict['detection_masks'] = output_dict['detection_masks'][0]
 
         return output_dict
 
-    # Section the target image into grids of 2X3
-    # Section grids will pass though the model
     def split_image(self):
         img = Image.open(self.TARGET_IMAGE_PATH)
         width, height = img.size
-        cropped = []
-        sixth = height/6
-        twelve = height / 12
-        cropped.append(img.crop((0, 0, width, sixth)))
-        cropped.append(img.crop((0, twelve, width, 1.5*sixth)))
-        cropped.append(img.crop((0, sixth, width, 2*sixth)))
-        cropped.append(img.crop((0, (3 * (height / 12)), width, 2.5*sixth)))
-        cropped.append(img.crop((0, (4 * (height / 12)), width, 3*sixth)))
-        cropped.append(img.crop((0, (5 * (height / 12)), width, 3.5*sixth)))
-        cropped.append(img.crop((0, (6 * (height / 12)), width, 4*sixth)))
-        cropped.append(img.crop((0, (7 * (height / 12)), width, 4.5*sixth)))
-        cropped.append(img.crop((0, (8 * (height / 12)), width, 5*sixth)))
-        cropped.append(img.crop((0, (9 * (height / 12)), width, 5.5*sixth)))
-        cropped.append(img.crop((0, (10 * (height / 12)), width, height)))
-        
-        # Save each section as a new image
-        for x in range(0, len(cropped)):
-            #cropped[x].save(
-                #CROP_DIR + "/crop" + str(x + 1) + ".jpg")
-            self.run_detection(cropped[x], x)
+        x = width / 3
+        y = height / 3
+        # Crops images into quadrants
+        cropped = [img.crop((0, 0, 2 * x, 2 * y)),
+                   img.crop((x, 0, width, 2 * y)),
+                   img.crop((0, y, 2 * x, 2 * height)),
+                   img.crop((x, y, width, height))]
+
+        # Run object detection on each portion of image
+        i = 0
+        for q in cropped:
+            self.run_detection(q, i, x, y)
+            i += 1
+        self.clean_list(x, y)
         self.save_the_things(img)
 
     # Main method for text detection
-    def run_detection(self, cropped, iteration):
+    def run_detection(self, cropped, iteration, x, y):
         image = cropped
         im_width, im_height = image.size
-        coor = []
-        c1 = 0
-        c2 = 0
+
+        # Checks how much of a margin to add depending on iteration
+        if iteration == 1:
+            w = x
+            h = 0
+        elif iteration == 2:
+            w = 0
+            h = y
+        elif iteration == 3:
+            w = x
+            h = y
+        else:
+            w = 0
+            h = 0
         # the array based representation of the image will be used later in order to prepare the
         # result image with boxes and labels on it.
         image_np = self.load_image_into_numpy_array(image)
@@ -146,79 +150,68 @@ class TextDetection:
             line_thickness=3)
 
         for i in range(0, output_dict['num_detections']):
-            coor.append(
-                (output_dict['detection_boxes'][i][1] * im_width, output_dict['detection_boxes'][i][0] * im_height + (iteration*im_height/2),
-                 output_dict['detection_boxes'][i][3] * im_width, output_dict['detection_boxes'][i][2] * im_height + (iteration*im_height/2)))
-        
-        # Sort the cropped words into the order they would be read in
-        # NOTE This implementation doesn't work anymore with 'split_image' method
-        coor = sorted(coor, key=lambda k: [k[0], k[1]])
-        coor = sorted(coor, key=lambda k: [k[1], k[0]])
-        print (coor)
-        
+            self.words.append(
+                (output_dict['detection_boxes'][i][1] * im_width + w,
+                 output_dict['detection_boxes'][i][0] * im_height + h,
+                 output_dict['detection_boxes'][i][3] * im_width + w,
+                 output_dict['detection_boxes'][i][2] * im_height + h))
+
+    def clean_list(self, w, h):
+        c1 = 0
+        c2 = 0
+        # iterate through list and find any overlapping boxes, merge and delete
+        for i in range(0, len(self.words)-1):
+            index = i + 1
+            while index < len(self.words):
+                if self.do_overlap(self.words[i], self.words[index]):
+                    self.words[i] = self.merge(self.words[i], self.words[index])
+                    del (self.words[index])
+                else:
+                    index += 1
+
+        # Sorts the words from left most top most
+        self.words = sorted(self.words, key=lambda k: [k[0], k[1]])
+        self.words = sorted(self.words, key=lambda k: [k[1], k[0]])
+
         while True:
-            for i in range(0, len(coor) - 1):
-                if coor[i][0] > coor[i + 1][0]:
-                    if 20 > coor[i + 1][1] - coor[i][1] > -20:
-                        coor[i], coor[i + 1] = coor[i + 1], coor[i]
+            for i in range(0, len(self.words) - 1):
+                if self.words[i][0] > self.words[i + 1][0]:
+                    if 20 > self.words[i + 1][1] - self.words[i][1] > -20:
+                        self.words[i], self.words[i + 1] = self.words[i + 1], self.words[i]
                         c1 += 1
+
             if c1 == c2:
                 break
 
             c2 = c1
-        self.merge_boxy_bois(iteration, im_height, coor)
 
-    def merge_boxy_bois(self, iteration, height, coor):
-        top = []
-        bottom = []
-        if iteration == 0:
-            for x1 in coor:
-                if x1[3] > height/2:
-                    self.temp_words.append(x1)
-                else:
-                    self.words.append(x1)
+    def is_isolated(self, x, w, h):
+        # checks if its any of the four corners
+        if (self.words[x][2] < w and self.words[x][3] < h) \
+                or (self.words[x][0] > 2 * w and self.words[x][3] < h) \
+                or (self.words[x][2] < w and self.words[x][1] > 2 * h) \
+                or (self.words[x][0] > 2 * w and self.words[x][1] > 2 * h):
+            return True
         else:
-            for x1 in coor:
-                if x1[3] < (iteration - 1)*(height / 2)+height:
-                    top.append(x1)
-                else:
-                    bottom.append(x1)
-            found = False
-            for x1 in top:
-                for y in self.temp_words:
-                    if self.do_over_lap(x1, y):
-                        self.words.append(self.merge(x1, y))
-                        found = True
-                        break
-                if not found:
-                    self.words.append(x1)
-                found = False
-            self.temp_words = bottom
-            if iteration == 10:
-                for i in bottom:
-                    self.words.append(i)
-
+            return False
 
     @staticmethod
-    def do_over_lap(x2, y):
-
+    def do_overlap(x, y):
+        # Tolerance of overlap, if barely touching it won't be considered an overlap
+        t = 0
         # If one rectangle is on left side of other
-        if x2[0] > y[2] or y[0] > x2[2]:
+        if x[0] > y[2] - t or y[0] > x[2] - t:
             return False
 
         # If one rectangle is above other
-        if x2[1] > y[3] or y[1] > x2[3]:
+        if x[1] > y[3] - t or y[1] > x[3] - t:
             return False
 
         return True
 
     @staticmethod
     def merge(x, y):
-        c = []
-        c.append(min(x[0], y[0]))
-        c.append(min(x[1], y[1]))
-        c.append(max(x[2], y[2]))
-        c.append(max(x[3], y[3]))
+        c = [min(x[0], y[0]), min(x[1], y[1]), max(x[2], y[2]), max(x[3], y[3])]
         return c
 
     def save_the_things(self, img):
@@ -227,5 +220,6 @@ class TextDetection:
             img2.save(
                 WORD_DIR + "/image" + str(i) + ".jpg")
 
-x = TextDetection()
-x.split_image()
+
+q = TextDetection()
+q.split_image()

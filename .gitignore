@@ -74,3 +74,6 @@ fabric.properties
 venv/
 env/
 .vscode/settings.json
+
+images/temporary/words
+images/test
